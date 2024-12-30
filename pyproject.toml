@@ -35,7 +35,19 @@ format = "black ./tests"
 lint = "pylint ./tests"
 example-test = "python tests/run_tests.py --test-name example_test"
 restart-test = "python tests/run_tests.py --test-name restart"
-tests = ["example-test", "restart-test"]
+florestacli-getblockchaininfo-test = "python tests/run_tests.py --test-name floresta_cli_getblockchaininfo"
+florestacli-getblockhash-test = "python tests/run_tests.py --test-name floresta_cli_getblockhash"
+florestacli-getblock-test = "python tests/run_tests.py --test-name floresta_cli_getblock"
+florestacli-getpeerinfo-test = "python tests/run_tests.py --test-name floresta_cli_getpeerinfo"
+florestacli-stop-test = "python tests/run_tests.py --test-name floresta_cli_stop" 
+tests = [
+  "restart-test",
+  "florestacli-getblockchaininfo-test",
+  "florestacli-getblockhash-test",
+  "florestacli-getblock-test",
+  "florestacli-getpeerinfo-test",
+  "florestacli-stop-test"
+]
 pre-commit = ["format", "lint", "tests"]
 
 [build-system]

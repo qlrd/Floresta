@@ -27,6 +27,25 @@ REGTEST_RPC_SERVER = {
 }
 
 
+class JSONRPCError(Exception):
+    """A custom exception for JSONRPC calls"""
+
+    def __init__(self, rpc_id: str, code: int, message: str):
+        """Initialize with message, the error code and the caller id"""
+        super().__init__(message)
+        self.message = message
+        self.code = code
+        self.rpc_id = rpc_id
+
+    def __repr__(self):
+        """Format the exception repr"""
+        return f"JSONRPC error {self.code} on request {self.rpc_id}: {self.message}"
+
+    def __str__(self):
+        """Format the exception toString"""
+        return f"JSONRPC error {self.code} on request {self.rpc_id}: {self.message}"
+
+
 class FlorestaRPC:
     """
     A class for making RPC calls to a floresta node.
@@ -132,10 +151,51 @@ class FlorestaRPC:
         # to avoid W3101: Missing timeout argument for method 'requests.post'
         # can cause your program to hang indefinitely (missing-timeout)
         response = post(url, data=payload, headers=headers, timeout=timeout)
-        return response.json()["result"]
+        result = response.json()
+        if "error" in result:
+            raise JSONRPCError(
+                rpc_id=result["id"],
+                code=result["error"]["code"],
+                message=result["error"]["message"],
+            )
+
+        return result["result"]
 
     def get_blockchain_info(self) -> dict:
         """
         Get the blockchain info by performing `perform_request('getblockchaininfo')`
         """
         return self.perform_request("getblockchaininfo")
+
+    def get_blockhash(self, height: int) -> dict:
+        """
+        Get the blockhash associated with a given height performing
+        `perform_request('getblockhash', params=[<int>])`
+        """
+        return self.perform_request("getblockhash", params=[height])
+
+    def get_block(self, blockhash: str):
+        """
+        Get a full block, given its hash performing
+        `perform_request('getblock', params=[str])`
+
+        Notice that this rpc will cause a actual network request to our node,
+        so it may be slow, and if used too often, may cause more network usage.
+        The returns for this rpc are identical to bitcoin core's getblock rpc
+        as of version 27.0.
+        """
+        return self.perform_request("getblock", params=[blockhash])
+
+    def get_peerinfo(self):
+        """
+        Get the outpoint associated with a given tx and vout performing
+        `perform_request('gettxout', params=[str, int])`
+        """
+        return self.perform_request("getpeerinfo")
+
+    def get_stop(self):
+        """
+        Gracefully stops the node performing
+        `perform_request('stop')`
+        """
+        return self.perform_request("stop")
