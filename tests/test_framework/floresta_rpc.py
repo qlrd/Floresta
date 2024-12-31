@@ -14,6 +14,7 @@ A test framework for testing JsonRPC calls to a floresta node.
 # import tempfile
 # import logging
 # import traceback
+import re
 import time
 import json
 from subprocess import Popen
@@ -56,20 +57,16 @@ class FlorestaRPC:
     #
     # Avoid W0102: Dangerous default value as argument
     # See more at https://www.valentinog.com/blog/tirl-python-default-arguments/
-    def __init__(
-        self, process: Popen, extra_args: list[str], rpcserver: dict[str, str]
-    ):
+    def __init__(self, process: Popen, rpcserver: dict[str, str]):
         """
         Initialize a FlorestaRPC object
 
         Args:
             process: usually, a `cargo run --features json-rpc  --bin florestad` subprocess
-            extra_args: TODO: unimplemented on this class
             rpcserver: rpc server to be called, generally a regtest (see REGTEST_RPC_SERVER)
         """
 
         # Avoid R0902: Too many instance attributes
-        self.extra_args = extra_args
         self.rpcserver = rpcserver
         self.process = process
 
@@ -199,3 +196,30 @@ class FlorestaRPC:
         `perform_request('stop')`
         """
         return self.perform_request("stop")
+
+    def get_addnode(self, node: str):
+        """
+        Adds a new node to our list of peers performing
+        `perform_request('addnode', params=[str])`
+
+        This will make our node try to connect to this peer.
+
+        Args
+            node: A network address with the format ip[:port]
+
+        Returns
+            success: Whether we successfully added this node to our list of peers
+        """
+        # matches, IPv4, IPv6 and optional ports from 0 to 65535
+        pattern = re.compile(
+            r"^("
+            r"(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}"
+            r"(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])|"
+            r"\[([a-fA-F0-9:]+)\]"
+            r")"
+            r"(:(6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-9]?[0-9]{1,4}))?$"
+        )
+
+        if not pattern.match(node):
+            raise ValueError("Invalid ip[:port] format")
+        return self.perform_request("addnode", params=[node])

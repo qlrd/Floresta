@@ -15,6 +15,7 @@ class GetPeerInfoTest(FlorestaTestFramework):
     """
 
     nodes = [-1]
+    expected_error = "Node is in initial block download, wait until it's finished"
 
     def set_test_params(self):
         """
@@ -39,10 +40,7 @@ class GetPeerInfoTest(FlorestaTestFramework):
             node.get_peerinfo()
         except JSONRPCError as exc:
             assert exc.code == 10
-            assert (
-                exc.message
-                == "Node is in initial block download, wait until it's finished"
-            )
+            assert exc.message == GetPeerInfoTest.expected_error
         finally:
             # Shutdown node
             self.stop_node(GetPeerInfoTest.nodes[0])
