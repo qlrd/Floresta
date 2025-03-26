@@ -14,12 +14,15 @@ The difference is that our node will run withing a `cargo run` subprocess, defin
 """
 
 import os
+import re
 import subprocess
-from test_framework.floresta_rpc import FlorestaRPC
+from typing import Any, List, Pattern
+
 from test_framework.crypto.pkcs8 import (
     create_pkcs8_private_key,
     create_pkcs8_self_signed_certificate,
 )
+from test_framework.floresta_rpc import FlorestaRPC
 
 VALID_FLORESTAD_EXTRA_ARGS = [
     "-c",
@@ -296,3 +299,54 @@ class FlorestaTestFramework(metaclass=FlorestaTestMetaClass):
         """
         for i in range(len(self._nodes)):
             self.stop_node(i)
+
+    # pylint: disable=invalid-name
+    def assertTrue(self, condition: bool):
+        """
+        Assert if the condition is True, otherwise
+        all nodes will be stopped and an AssertionError will
+        be raised
+        """
+        if not condition:
+            self.stop()
+            raise AssertionError(f"Actual: {condition}\nExpected: True")
+
+    # pylint: disable=invalid-name
+    def assertEqual(self, condition: Any, expected: Any):
+        """
+        Assert if the condition is True, otherwise
+        all nodes will be stopped and an AssertionError will
+        be raised
+        """
+
+        if not condition == expected:
+            self.stop()
+            raise AssertionError(f"Actual: {condition}\nExpected: {expected}")
+
+    # pylint: disable=invalid-name
+    def assertIn(self, element: Any, listany: List[Any]):
+        """
+        Assert if the element is in listany , otherwise
+        all nodes will be stopped and an AssertionError will
+        be raised
+        """
+
+        if element not in listany:
+            self.stop()
+            raise AssertionError(
+                f"Actual: {element} not in {listany}\nExpected: {element} in {listany}"
+            )
+
+    # pylint: disable=invalid-name
+    def assertMatch(self, actual: Any, pattern: Pattern):
+        """
+        Assert if the element is in set , otherwise
+        all nodes will be stopped and an AssertionError will
+        be raised
+        """
+
+        if not re.fullmatch(pattern, actual):
+            self.stop()
+            raise AssertionError(
+                f"Actual: {actual} !~ {pattern} \nExpected: {actual} ~ {set}"
+            )
