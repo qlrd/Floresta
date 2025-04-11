@@ -12,40 +12,15 @@ will run withing a `cargo run` subprocess, defined at `add_node_settings`.
 
 import os
 import re
-import subprocess
-from typing import Any, List, Pattern
+import time
+from typing import Any, Dict, List, Pattern
 
-from test_framework.crypto.pkcs8 import (
-    create_pkcs8_private_key,
-    create_pkcs8_self_signed_certificate,
-)
-from test_framework.floresta_rpc import FlorestaRPC
-
-VALID_FLORESTAD_EXTRA_ARGS = [
-    "-c",
-    "--config-file",
-    "-d",
-    "--debug",
-    "--log-to-file",
-    "--data-dir",
-    "--cfilters",
-    "-p",
-    "--proxy",
-    "--wallet-xpub",
-    "--wallet-descriptor",
-    "--assume-valid",
-    "-z",
-    "--zmq-address",
-    "--connect",
-    "--rpc-address",
-    "--electrum-address",
-    "--filters-start-height",
-    "--assume-utreexo",
-    "--pid-file",
-    "--ssl-electrum-address",
-    "--ssl-cert-path",
-    "--ssl-key-path",
-]
+from test_framework.crypto.pkcs8 import (create_pkcs8_private_key,
+                                         create_pkcs8_self_signed_certificate)
+from test_framework.daemon.floresta import FlorestaDaemon
+from test_framework.daemon.utreexo import UtreexoDaemon
+from test_framework.rpc.floresta import FlorestaRPC
+from test_framework.rpc.utreexo import UtreexoRPC
 
 
 class FlorestaTestMetaClass(type):
@@ -150,7 +125,6 @@ class FlorestaTestFramework(metaclass=FlorestaTestMetaClass):
 
         Do not override this method. Instead, override the set_test_params() method
         """
-        self._tests = []
         self._nodes = []
 
     def log(self, msg: str):
@@ -186,14 +160,13 @@ class FlorestaTestFramework(metaclass=FlorestaTestMetaClass):
         Get path for florestad used in integration tests, generally set on
         $FLORESTA_TEMP_DIR/binaries
         """
-        if os.getenv("FLORESTA_TEMP_DIR") is None:
+        tmpdir = os.getenv("FLORESTA_TEMP_DIR")
+        if tmpdir is None:
             raise RuntimeError(
                 "FLORESTA_TEMP_DIR not set. "
                 + " Please set it to the path of the integration test directory."
             )
-        return os.path.normpath(
-            os.path.join(os.getenv("FLORESTA_TEMP_DIR"), "binaries")
-        )
+        return os.path.normpath(os.path.join(tmpdir, "binaries"))
 
     def create_ssl_keys(self) -> tuple[str, str]:
         """
@@ -226,7 +199,11 @@ class FlorestaTestFramework(metaclass=FlorestaTestMetaClass):
 
     # Framework
     def add_node_settings(
-        self, chain: str, extra_args: list[str], rpcserver: dict, ssl: bool = False
+        self,
+        variant: str,
+        rpcserver: Dict[str, str],
+        extra_args: List[str],
+        ssl: bool = False,
     ) -> int:
         """
         Add a node settings to be run. Use this on set_test_params method
@@ -246,53 +223,53 @@ class FlorestaTestFramework(metaclass=FlorestaTestMetaClass):
                 + " Please set it to the path of the integration test directory."
             )
 
-        florestad = os.path.join(targetdir, "florestad")
+        daemon = None
 
-        # In case any florestad is found, raise an exception
-        if not os.path.exists(florestad):
-            raise RuntimeError(f"Not found any 'florestad' in '{targetdir}'")
+        if variant == "florestad":
+            daemon = FlorestaDaemon()
+            daemon.create(target=targetdir)
+            daemon.add_daemon_settings(extra_args)
 
-        setting = {
-            "chain": chain,
-            "config": [florestad, "--network", chain],
-            "rpcserver": rpcserver,
-        }
+            if not ssl:
+                daemon.add_daemon_settings(["--no-ssl"])
+            else:
+                (key, cert) = self.create_ssl_keys()
+                daemon.add_daemon_settings(
+                    [f"--ssl-key-path={key}", f"--ssl-cert-path={cert}"]
+                )
 
-        # If any extra-arg is needed
-        # (see ./target/release/florestad --help)
-        # append it after --no-ssl arg
-        # Not all possible arguments are valid for tests
-        # (for example, --version, --help, --ssl ones...)
-        if extra_args is not None and len(extra_args) >= 1:
-            for extra in extra_args:
-                option = extra.split("=")[0] if "=" in extra else extra.split(" ")[0]
-                if option in VALID_FLORESTAD_EXTRA_ARGS:
-                    setting["config"].append(extra)
-                else:
-                    raise ValueError(f"Invalid extra_arg '{extra}'")
+        if variant == "utreexod":
+            daemon = UtreexoDaemon()
+            daemon.create(target=targetdir)
+            daemon.add_daemon_settings(extra_args)
+            if not ssl:
+                daemon.add_daemon_settings(["--notls"])
+            else:
+                (key, cert) = self.create_ssl_keys()
+                daemon.add_daemon_settings([f"--rpckey={key}", f"--rpccert={cert}"])
 
-        # If ssl isnt enabled, add --no-ssl
-        # if ssl is enabled, user can add:
-        #   --ssl-cert-path
-        #   --ssl-key-path
-        # Either way, we need to create PKCS#8 key and certificate
-        if not ssl:
-            setting["config"].append("--no-ssl")
-        else:
-            (key, cert) = self.create_ssl_keys()
-            setting["config"].append("--ssl-key-path")
-            setting["config"].append(key)
-            setting["config"].append("--ssl-cert-path")
-            setting["config"].append(cert)
-
-        self._tests.append(setting)
-        return len(self._tests) - 1
+        self._nodes.append(
+            {"daemon": daemon, "rpc": None, "rpc_config": rpcserver, "variant": variant}
+        )
+        return len(self._nodes) - 1
 
     def get_node_settings(self, index: int) -> dict:
         """
         Given an index, return a node configuration
         """
-        return self._tests[index]
+        if index < 0 or index >= len(self._nodes):
+            raise IndexError(
+                f"Node {index} not found. Please run it with add_node_settings"
+            )
+        if self._nodes[index]["daemon"] is None:
+            raise IndexError(
+                f"Node daemon {index} not found. Please run it with add_node_settings"
+            )
+        if self._nodes[index]["rpc_config"] is None:
+            raise IndexError(
+                f"Node rpc config {index} not found. Please run it with add_node_settings"
+            )
+        return self._nodes[index]
 
     def run_node(self, index: int):
         """
@@ -301,49 +278,41 @@ class FlorestaTestFramework(metaclass=FlorestaTestMetaClass):
         If the node not exists raise a IndexError. At the time
         the tests will only run nodes configured to run on regtest.
         """
-        node = self._tests[index]
+        node = self.get_node_settings(index)
+        daemon = node["daemon"]
+        rpcserver = node["rpc_config"]
+        daemon.start()
 
-        if node["chain"] == "regtest":
-            # pylint: disable=consider-using-with
-            # add text=True to treat all outputs as texts
-            # (jsons or python stack traces)
-            cmd = " ".join(node["config"])
-            self.log(f"Running '{cmd}'")
-            process_node = subprocess.Popen(node["config"], text=True)
-            json_rpc = FlorestaRPC(process=process_node, rpcserver=node["rpcserver"])
-            self._nodes.append(json_rpc)
+        if node["variant"] == "florestad":
+            self._nodes[index]["rpc"] = FlorestaRPC(
+                process=daemon.process, rpcserver=rpcserver
+            )
 
-        else:
-            chain = node["chain"]
-            raise RuntimeError(f"Uninmplemented test_framework for chain '{chain}'")
+        if node["variant"] == "utreexod":
+            self._nodes[index]["rpc"] = UtreexoRPC(
+                process=daemon.process, rpcserver=rpcserver
+            )
+
+        self._nodes[index]["rpc"].wait_for_connections(opened=True)
 
     def get_node(self, index: int) -> FlorestaRPC:
         """
         Given an index, return a node configuration
         """
-        return self._nodes[index]
-
-    def wait_for_rpc_connection(self, index: int):
-        """
-        Wait for rpc in a given node index
-        """
-        node = self._nodes[index]
-        node.wait_for_rpc_connection()
-
-    def stop_node(self, index: int):
-        """
-        Stop a node given an index
-        """
-        node = self._nodes[index]
-        node.kill()
-        node.wait_to_stop()
+        node = self.get_node_settings(index)
+        if node["rpc"] is None:
+            raise IndexError(
+                f"Node JSONRPC{index} not started. Please run it with run_node({index})"
+            )
+        return node["rpc"]
 
     def stop(self):
         """
         Stop all nodes
         """
         for i in range(len(self._nodes)):
-            self.stop_node(i)
+            rpc = self._nodes[i]["rpc"]
+            rpc.stop()
 
     # pylint: disable=invalid-name
     def assertTrue(self, condition: bool):

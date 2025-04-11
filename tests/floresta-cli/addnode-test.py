@@ -56,7 +56,6 @@ class GetAddnodeIDBErrorTest(FlorestaTestFramework):
         and rpc-addresses in the same regtest network
         """
         GetAddnodeIDBErrorTest.nodes[0] = self.add_node_settings(
-            chain="regtest",
             extra_args=[
                 f"--data-dir={GetAddnodeIDBErrorTest.data_dirs[0]}",
                 f"--electrum-address={GetAddnodeIDBErrorTest.electrum_addrs[0]}",
