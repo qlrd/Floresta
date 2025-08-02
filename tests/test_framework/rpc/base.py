@@ -265,7 +265,13 @@ class BaseRPC(metaclass=BaseRpcMetaClass):
 
         # If response isnt 200, raise an HTTPError
         if response.status_code != 200:
-            raise HTTPError
+            result = json.loads(response.text)
+            raise JSONRPCError(
+                data=result["error"] if isinstance(result["error"], str) else None,
+                rpc_id=result["id"],
+                code=result["error"]["code"],
+                message=result["error"]["message"],
+            )
 
         result = response.json()
         # Error could be None or a str

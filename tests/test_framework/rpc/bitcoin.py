@@ -67,6 +67,12 @@ class BitcoinRPC(BaseRPC):
         """
         return self.perform_request("getblockcount")
 
+    def get_block(self, block_hash: str, verbose: int = 0) -> dict:
+        """
+        Get a block by its hash performing `perform_request('getblock', params=[str, int])`
+        """
+        return self.perform_request("getblock", params=[block_hash, verbose])
+
     # pylint: disable=R0801
     def addnode(self, node: str, command: str, v2transport: bool = False):
         """
