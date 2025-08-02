@@ -17,6 +17,7 @@ import copy
 import time
 import random
 import socket
+import traceback
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Pattern, TextIO
 
@@ -188,17 +189,18 @@ class FlorestaTestFramework(metaclass=FlorestaTestMetaClass):
             """Enter the context manager."""
             return self
 
-        def __exit__(self, exc_type, exc_value, traceback):
+        def __exit__(self, exc_type, exc_value, _):
             """Exit the context manager and check if the expected exception was raised."""
             if exc_type is None:
-                self.test_framework.stop_all_nodes()
                 trace = traceback.format_exc()
                 message = f"{self.expected_exception} was not raised"
                 raise AssertionError(f"{message}: {trace}")
 
             if not issubclass(exc_type, self.expected_exception):
                 trace = traceback.format_exc()
-                message = f"Expected {self.expected_exception} but got {exc_type}"
+                message = (
+                    f"Expected {self.expected_exception.__name__} but got {exc_type}"
+                )
                 raise AssertionError(f"{message}: {trace}")
 
             self.exception = exc_value
