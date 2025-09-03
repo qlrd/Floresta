@@ -9,17 +9,47 @@ jobs:
   functional:
     name: Functional
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        bitcoind-rev: ["29.0"]
+        utreexod-rev: ["0.4.1"]
 
     steps:
       - uses: actions/checkout@v4
 
-      # These are the minimal deps defined by bitcoin core at
-      # https://github.com/bitcoin/bitcoin/blob/master/doc/build-unix.md
-      - name: Prepare bitcoin-core deps
-        run: sudo apt install build-essential cmake pkgconf python3 libevent-dev libboost-dev
+      - name: prepare-cache
+        id: prep
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN_DIR="/tmp/floresta-func-tests.$(git describe --tags --always)/binaries"
+          echo "bin-dir=$BIN_DIR" >> "$GITHUB_OUTPUT"
 
-      # see more at
-      # https://docs.astral.sh/uv/guides/integration/github/
+      # Restore by VERSION first (you don't know the SHA yet when building from source)
+      - name: Restore bitcoind
+        id: cache-bitcoind
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.prep.outputs.bin-dir }}/bitcoind
+          key: ${{ runner.os }}-${{ runner.arch }}-bitcoind-${{ matrix.bitcoind-rev }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-bitcoind-
+
+      - name: Restore utreexod
+        id: cache-utreexod
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ steps.prep.outputs.bin-dir }}/utreexod
+          key: ${{ runner.os }}-${{ runner.arch }}-utreexod-${{ matrix.utreexod-rev }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-utreexod-
+
+      # Build deps only if bitcoind wasn't restored
+      - name: Prepare bitcoin-core deps
+        if: ${{ steps.cache-bitcoind.outputs.cache-hit != 'true' }}
+        run: sudo apt-get update && sudo apt-get install -y build-essential cmake pkgconf python3 libevent-dev libboost-dev
+
+      # UV
       - name: Install uv
         uses: astral-sh/setup-uv@v5
         with:
@@ -40,6 +70,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run functional tests tasks
+        env:
+          BITCOIN_REVISION: ${{ matrix.bitcoind-rev }}
+          UTREEXO_REVISION: ${{ matrix.utreexod-rev }}
         run: |
           tests/prepare.sh
           tests/run.sh
@@ -57,3 +90,38 @@ jobs:
             cat "$logfile" || echo "Failed to read $logfile"
             echo "::endgroup::"
           done
+
+      # Compute actual SHAs AFTER build/restore
+      - name: Compute daemon SHAs
+        id: shas
+        shell: bash
+        run: |
+          BIN_DIR="${{ steps.prep.outputs.bin-dir }}"
+          B="$BIN_DIR/bitcoind"
+          U="$BIN_DIR/utreexod"
+          sha_b=""
+          sha_u=""
+          if [[ -f "$B" && -s "$B" ]]; then have_b=true; sha_b=$(sha256sum "$B" | awk '{print $1}'); fi
+          if [[ -f "$U" && -s "$U" ]]; then have_u=true; sha_u=$(sha256sum "$U" | awk '{print $1}'); fi
+          echo "have_bitcoind=$have_b" >> "$GITHUB_OUTPUT"
+          echo "have_utreexod=$have_u" >> "$GITHUB_OUTPUT"
+          echo "bitcoind_sha=$sha_b" >> "$GITHUB_OUTPUT"
+          echo "utreexod_sha=$sha_u" >> "$GITHUB_OUTPUT"
+          echo "bitcoind sha: ${sha_b:-<missing>} (present=$have_b)"
+          echo "utreexod  sha: ${sha_u:-<missing>} (present=$have_u)"
+
+      # Save ONLY SHA-keyed caches so future runs can be content-addressed *if* you can know SHA early
+      - name: Save bitcoind cache
+        if: ${{ success() && steps.cache-bitcoind.outputs.cache-hit != 'true' && steps.shas.outputs.have_bitcoind == 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.prep.outputs.bin-dir }}/bitcoind
+          key: ${{ runner.os }}-${{ runner.arch }}-bitcoind-${{ steps.shas.outputs.bitcoind_sha }}
+
+      - name: Save utreexod cache
+        if: ${{ success() && steps.cache-utreexod.outputs.cache-hit != 'true' && steps.shas.outputs.have_utreexod == 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.prep.outputs.bin-dir }}/utreexod
+          key: ${{ runner.os }}-${{ runner.arch }}-utreexod-${{ steps.shas.outputs.utreexod_sha }}
+
