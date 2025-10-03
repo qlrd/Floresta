@@ -310,6 +310,8 @@ pub enum JsonRpcError {
 
     /// Raised if when the rescanblockchain command, with the timestamp flag activated, contains some timestamp thats less than the genesis one and not zero which is the default value for this arg.
     InvalidTimestamp,
+
+    ToValue(serde_json::Error),
 }
 
 impl Display for JsonRpcError {
@@ -339,6 +341,7 @@ impl Display for JsonRpcError {
             JsonRpcError::Wallet(e) => write!(f, "Wallet error: {e}"),
             JsonRpcError::Filters(e) => write!(f, "Error with filters: {e}"),
             JsonRpcError::InvalidAddnodeCommand => write!(f, "Invalid addnode command"),
+            JsonRpcError::ToValue(e) => write!(f, "Failed to convert data: {e}")
         }
     }
 }

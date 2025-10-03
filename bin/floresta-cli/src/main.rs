@@ -82,8 +82,8 @@ fn do_request(cmd: &Cli, client: Client) -> anyhow::Result<String> {
         Methods::SendRawTransaction { tx } => {
             serde_json::to_string_pretty(&client.send_raw_transaction(tx)?)?
         }
-        Methods::GetBlockHeader { hash } => {
-            serde_json::to_string_pretty(&client.get_block_header(hash)?)?
+        Methods::GetBlockHeader { hash, verbose } => {
+            serde_json::to_string_pretty(&client.get_block_header(hash, verbose)?)?
         }
         Methods::LoadDescriptor { desc } => {
             serde_json::to_string_pretty(&client.load_descriptor(desc)?)?
@@ -223,9 +223,16 @@ pub enum Methods {
     #[command(name = "sendrawtransaction")]
     SendRawTransaction { tx: String },
 
-    /// Returns the block header for the given block hash
-    #[command(name = "getblockheader")]
-    GetBlockHeader { hash: BlockHash },
+    #[command(
+        name = "getblockheader",
+        about = "Returns a string that is serialized, hex-encoded data for blockheader ‘hash’.",
+        long_about = Some(include_str!("../../../doc/rpc/getblockheader.md")),
+        disable_help_subcommand = true
+    )]
+    GetBlockHeader {
+        hash: BlockHash,
+        verbose: Option<bool>,
+    },
 
     /// Loads a new descriptor to the watch only wallet
     #[command(name = "loaddescriptor")]

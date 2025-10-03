@@ -312,9 +312,22 @@ async fn handle_json_rpc_request(
 
         "getblockheader" => {
             let hash = get_hash(&params, 0, "block_hash")?;
-            state
-                .get_block_header(hash)
-                .map(|h| serde_json::to_value(h).unwrap())
+            let verbose = get_bool(&params, 1, "verbose")?;
+            let h = state.get_block_header(hash)?;
+
+            match verbose {
+                true => serde_json::to_value(h).map_err(JsonRpcError::ToValue),
+                false => {
+                    let mut raw = vec![];
+                    raw.extend_from_slice(h.version.to_consensus().to_le_bytes().as_slice());
+                    raw.extend_from_slice(h.prev_blockhash.as_byte_array());
+                    raw.extend_from_slice(h.merkle_root.as_byte_array());
+                    raw.extend_from_slice(h.time.to_le_bytes().as_slice());
+                    raw.extend_from_slice(h.bits.to_consensus().to_le_bytes().as_slice());
+                    raw.extend_from_slice(h.nonce.to_le_bytes().as_slice());
+                    serde_json::to_value(raw.to_lower_hex_string()).map_err(JsonRpcError::ToValue)
+                }
+            }
         }
 
         "gettxout" => {
@@ -483,9 +496,10 @@ fn get_http_error_code(err: &JsonRpcError) -> u16 {
         | JsonRpcError::Wallet(_) => 400,
 
         // idunnolol
-        JsonRpcError::MethodNotFound | JsonRpcError::BlockNotFound | JsonRpcError::TxNotFound => {
-            404
-        }
+        JsonRpcError::MethodNotFound
+        | JsonRpcError::BlockNotFound
+        | JsonRpcError::TxNotFound
+        | JsonRpcError::ToValue(_) => 404,
 
         // we messed up, sowwy
         JsonRpcError::InInitialBlockDownload
@@ -498,7 +512,9 @@ fn get_http_error_code(err: &JsonRpcError) -> u16 {
 fn get_json_rpc_error_code(err: &JsonRpcError) -> i32 {
     match err {
         // Parse Error
-        JsonRpcError::Decode(_) | JsonRpcError::InvalidParameterType(_) => -32700,
+        JsonRpcError::Decode(_)
+        | JsonRpcError::InvalidParameterType(_)
+        | JsonRpcError::ToValue(_) => -32700,
 
         // Invalid Request
         JsonRpcError::InvalidHex
